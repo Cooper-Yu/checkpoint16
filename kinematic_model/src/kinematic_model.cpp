@@ -30,6 +30,8 @@ private:
       return;
     }
     const double wheel_radius_m = 0.05;
+    const double half_wheelbase_m = 0.085;
+    const double half_track_m = 0.135;
     const double w_fl = msg.data[0];
     const double w_fr = msg.data[1];
     const double w_rl = msg.data[2];
@@ -42,6 +44,10 @@ private:
 
     // TODO CP16-C036：计算vy，赋给cmd.linear.y；angular.z暂留零。
     cmd.linear.y = wheel_radius_m / 4 * (-w_fl + w_fr + w_rl - w_rr);
+
+    // TODO CP16-C037：计算车身角速度，赋给cmd.angular.z。
+    // k是两个半距之和，使用给定变量，不写死结果。
+    cmd.angular.z = wheel_radius_m / (4 * (half_wheelbase_m + half_track_m)) * (-w_fl + w_fr - w_rl + w_rr);
     publisher_->publish(cmd);
   }
 
