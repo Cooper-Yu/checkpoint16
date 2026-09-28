@@ -37,8 +37,11 @@ private:
     geometry_msgs::msg::Twist cmd;
 
     // TODO CP16-C035：使用上述变量计算vx，赋给cmd.linear.x。
-    // 不写死输出；linear.y和angular.z留后续切片，当前默认零。'
+    // C035前向分量已验证；保持学习者公式。
     cmd.linear.x = wheel_radius_m / 4 * (w_fl + w_fr + w_rl + w_rr);
+
+    // TODO CP16-C036：计算vy，赋给cmd.linear.y；angular.z暂留零。
+    cmd.linear.y = wheel_radius_m / 4 * (-w_fl + w_fr + w_rl - w_rr);
     publisher_->publish(cmd);
   }
 
