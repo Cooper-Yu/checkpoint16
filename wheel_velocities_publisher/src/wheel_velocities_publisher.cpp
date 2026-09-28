@@ -11,13 +11,13 @@ public:
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
     segment_started_at_ = std::chrono::steady_clock::now();
+    log_current_mode();  // Coach接线：首次Forward尚无模式切换，在定时器启动前记录。
     timer_ = create_wall_timer(std::chrono::milliseconds(100),
       [this]() {
         const double elapsed_seconds = std::chrono::duration<double>(
           std::chrono::steady_clock::now() - segment_started_at_).count();
         update_motion(elapsed_seconds);
       });
-    RCLCPP_INFO(get_logger(), "CP16-C026 scaffold: complete update_motion() before checking full sequence");
   }
 
 private:
@@ -30,6 +30,22 @@ private:
     Counterclockwise,
     Stop
   };
+
+  // Coach支持：将枚举转换为可读日志，C028只负责切换时的调用位置。
+  void log_current_mode()
+  {
+    const char * name = "Unknown";
+    switch (mode_) {
+      case MotionMode::Forward: name = "Forward"; break;
+      case MotionMode::Backward: name = "Backward"; break;
+      case MotionMode::Left: name = "Left"; break;
+      case MotionMode::Right: name = "Right"; break;
+      case MotionMode::Clockwise: name = "Clockwise"; break;
+      case MotionMode::Counterclockwise: name = "Counterclockwise"; break;
+      case MotionMode::Stop: name = "Stop"; break;
+    }
+    RCLCPP_INFO(get_logger(), "Starting motion: %s", name);
+  }
 
   MotionMode next_mode(MotionMode current)
   {
@@ -97,10 +113,13 @@ private:
 
   void update_motion(double elapsed_seconds)
   {
-    // TODO CP16-C026：整合六段计时调度，复用next_mode与publish_current_mode。
+    // TODO CP16-C028：在合适位置调用log_current_mode()，每次进入新阶段只打印一次。
+    // 保留C026已通过的计时和发布逻辑。
     // 非Stop阶段满3秒才推进一次，并更新段开始时间；Stop保持停止。
     // 每次回调都发布一次当前模式，包括尚未到3秒和已经停止时。
     // 不使用sleep，不复制六种轮速公式；旧两段版本已保存在提交6cf9e61。
+
+
     if (mode_ == MotionMode::Stop) {
       publish_current_mode();
       return;
@@ -111,9 +130,8 @@ private:
       return;
     }
 
-
-
     mode_ = next_mode(mode_);
+    log_current_mode();
     segment_started_at_ = std::chrono::steady_clock::now();
     publish_current_mode();
     return;
