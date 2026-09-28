@@ -11,8 +11,8 @@ public:
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
     timer_ = create_wall_timer(std::chrono::milliseconds(100),
-      [this]() { publish_forward(); });
-    RCLCPP_INFO(get_logger(), "CP16-C003 scaffold: complete publish_forward() before checking messages");
+      [this]() { publish_backward(); });
+    RCLCPP_INFO(get_logger(), "CP16-C005 scaffold: complete publish_backward() before checking messages");
   }
 
 private:
@@ -38,6 +38,17 @@ private:
     float wheel_speed_radps = forward_speed_mps / wheel_radius_m;
     forward_msg.data = {wheel_speed_radps, wheel_speed_radps, wheel_speed_radps, wheel_speed_radps};
     publisher_->publish(forward_msg);
+  }
+  void publish_backward()
+  {
+    const float speed_magnitude_mps = 0.10f;
+    const float wheel_radius_m = 0.05f;
+    // TODO CP16-C005：使用给定变量，计算并发布纯后退的四轮速度。
+    // 沿用数组[前左、前右、后左、后右]与正轮速驱动车身向前的约定。
+    std_msgs::msg::Float32MultiArray backward_msg;
+    float wheel_speed_radps = -speed_magnitude_mps / wheel_radius_m;
+    backward_msg.data = {wheel_speed_radps, wheel_speed_radps, wheel_speed_radps, wheel_speed_radps};
+    publisher_->publish(backward_msg);
   }
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
