@@ -11,8 +11,8 @@ public:
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
     timer_ = create_wall_timer(std::chrono::milliseconds(100),
-      [this]() { publish_stop(); });
-    RCLCPP_INFO(get_logger(), "Publishing four-wheel stop commands");
+      [this]() { publish_forward(); });
+    RCLCPP_INFO(get_logger(), "CP16-C003 scaffold: complete publish_forward() before checking messages");
   }
 
 private:
@@ -28,6 +28,17 @@ private:
 
   }
 
+  void publish_forward()
+  {
+    const float forward_speed_mps = 0.10f;
+    const float wheel_radius_m = 0.05f;
+    // TODO CP16-C003：由上述量计算轮速，构造并发布纯前进的四轮消息。
+    // 数组：[前左、前右、后左、后右]；正轮速约定驱动车身向前。
+    std_msgs::msg::Float32MultiArray forward_msg;
+    float wheel_speed_radps = forward_speed_mps / wheel_radius_m;
+    forward_msg.data = {wheel_speed_radps, wheel_speed_radps, wheel_speed_radps, wheel_speed_radps};
+    publisher_->publish(forward_msg);
+  }
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
