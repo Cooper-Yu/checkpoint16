@@ -17,7 +17,7 @@ public:
           std::chrono::steady_clock::now() - segment_started_at_).count();
         update_motion(elapsed_seconds);
       });
-    RCLCPP_INFO(get_logger(), "CP16-C020 scaffold: complete begin_backward() before checking timing");
+    RCLCPP_INFO(get_logger(), "CP16-C026 scaffold: complete update_motion() before checking full sequence");
   }
 
 private:
@@ -97,24 +97,26 @@ private:
 
   void update_motion(double elapsed_seconds)
   {
-    // Coach调度支持：沿用C017已通过的3秒判断，扩展到两段。
-    // C020学习者负责begin_backward()中的切换状态更新。
-    if (mode_ == MotionMode::Forward) {
-      if (elapsed_seconds < 3.0) {
-        publish_forward();
-      } else {
-        begin_backward();
-        publish_backward();
-      }
-      return;  // 本次elapsed属于前进段，不再拿它判断后退段。
+    // TODO CP16-C026：整合六段计时调度，复用next_mode与publish_current_mode。
+    // 非Stop阶段满3秒才推进一次，并更新段开始时间；Stop保持停止。
+    // 每次回调都发布一次当前模式，包括尚未到3秒和已经停止时。
+    // 不使用sleep，不复制六种轮速公式；旧两段版本已保存在提交6cf9e61。
+    if (mode_ == MotionMode::Stop) {
+      publish_current_mode();
+      return;
     }
+
     if (elapsed_seconds < 3.0) {
-      publish_backward();
-    } else {
-      // TODO CP16-C023：在此更新mode_，使状态记录与停止阶段一致。
-      mode_ = MotionMode::Stop;
-      publish_stop();
+      publish_current_mode();
+      return;
     }
+
+
+
+    mode_ = next_mode(mode_);
+    segment_started_at_ = std::chrono::steady_clock::now();
+    publish_current_mode();
+    return;
   }
 
   void publish_stop()
