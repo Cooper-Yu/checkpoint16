@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.8)
+project(kinematic_model)
+# Coach提供的本切片构建结构；不作为学习者CMake能力验收。
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+add_executable(kinematic_model src/kinematic_model.cpp)
+target_compile_features(kinematic_model PUBLIC cxx_std_17)
+ament_target_dependencies(kinematic_model rclcpp std_msgs geometry_msgs)
+install(TARGETS kinematic_model DESTINATION lib/${PROJECT_NAME})
+ament_package()
