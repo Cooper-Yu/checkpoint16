@@ -55,6 +55,36 @@ private:
     return MotionMode::Stop;  // Coach支持：异常枚举值的返回兜底。
   }
 
+  void publish_current_mode()
+  {
+    // TODO CP16-C025：按mode_调用一个对应的publish函数。
+    // 七种模式全部处理；每个case发布后return，避免继续执行其他分支。
+    // 不改变mode_和segment_started_at_，不重复轮速计算。
+    switch (mode_) {
+      case MotionMode::Forward:
+        publish_forward();
+        return;
+      case MotionMode::Backward:
+        publish_backward();
+        return;
+      case MotionMode::Left:
+        publish_left();
+        return;
+      case MotionMode::Right:
+        publish_right();
+        return;
+      case MotionMode::Clockwise:
+        publish_clockwise();
+        return;
+      case MotionMode::Counterclockwise:
+        publish_counterclockwise();
+        return;
+      case MotionMode::Stop:
+        publish_stop();
+        return;
+    }
+  }
+
   void begin_backward()
   {
     // TODO CP16-C020：进入后退时，更新mode_和segment_started_at_。
