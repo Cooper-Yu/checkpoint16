@@ -31,6 +31,30 @@ private:
     Stop
   };
 
+  MotionMode next_mode(MotionMode current)
+  {
+    // TODO CP16-C024：只返回下一模式，不更新成员变量或发布消息。
+    // 顺序：Forward -> Backward -> Left -> Right -> Clockwise -> Counterclockwise -> Stop。
+    // Stop之后仍为Stop；七种输入都应返回结果，可使用if / else if。
+    switch (current) {
+      case MotionMode::Forward:
+        return MotionMode::Backward;
+      case MotionMode::Backward:
+        return MotionMode::Left;
+      case MotionMode::Left:
+        return MotionMode::Right;
+      case MotionMode::Right:
+        return MotionMode::Clockwise;
+      case MotionMode::Clockwise:
+        return MotionMode::Counterclockwise;
+      case MotionMode::Counterclockwise:
+        return MotionMode::Stop;
+      case MotionMode::Stop:
+        return MotionMode::Stop;
+    }
+    return MotionMode::Stop;  // Coach支持：异常枚举值的返回兜底。
+  }
+
   void begin_backward()
   {
     // TODO CP16-C020：进入后退时，更新mode_和segment_started_at_。
