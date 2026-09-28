@@ -11,8 +11,8 @@ public:
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
     timer_ = create_wall_timer(std::chrono::milliseconds(100),
-      [this]() { publish_backward(); });
-    RCLCPP_INFO(get_logger(), "CP16-C005 scaffold: complete publish_backward() before checking messages");
+      [this]() { publish_left(); });
+    RCLCPP_INFO(get_logger(), "CP16-C007 scaffold: complete publish_left() before checking messages");
   }
 
 private:
@@ -50,6 +50,18 @@ private:
     backward_msg.data = {wheel_speed_radps, wheel_speed_radps, wheel_speed_radps, wheel_speed_radps};
     publisher_->publish(backward_msg);
   }
+  void publish_left()
+  {
+    const float left_speed_mps = 0.10f;
+    const float wheel_radius_m = 0.05f;
+    // TODO CP16-C007：使用给定变量，计算并发布纯左移的四轮速度。
+    // 数组顺序：[前左、前右、后左、后右]，单位rad/s。
+    std_msgs::msg::Float32MultiArray left_msg;
+    float wheel_speed_radps = left_speed_mps / wheel_radius_m;
+    left_msg.data = {-wheel_speed_radps, wheel_speed_radps, wheel_speed_radps, -wheel_speed_radps};
+    publisher_->publish(left_msg);
+  }
+
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
