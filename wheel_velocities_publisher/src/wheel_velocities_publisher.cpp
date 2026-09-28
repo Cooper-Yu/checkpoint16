@@ -10,12 +10,31 @@ public:
   WheelVelocitiesPublisher() : Node("wheel_velocities_publisher")
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
+    segment_started_at_ = std::chrono::steady_clock::now();
     timer_ = create_wall_timer(std::chrono::milliseconds(100),
-      [this]() { publish_counterclockwise(); });
-    RCLCPP_INFO(get_logger(), "CP16-C013 scaffold: complete publish_counterclockwise() before checking messages");
+      [this]() {
+        const double elapsed_seconds = std::chrono::duration<double>(
+          std::chrono::steady_clock::now() - segment_started_at_).count();
+        update_motion(elapsed_seconds);
+      });
+    RCLCPP_INFO(get_logger(), "CP16-C017 scaffold: complete update_motion() before checking timing");
   }
 
 private:
+  void update_motion(double elapsed_seconds)
+  {
+    // TODO CP16-C017：根据本段已过秒数，选择调用已有的运动发布函数。
+    // 要求：本段开始后的前3秒持续前进，达到3秒后持续发布停止。
+    // 只写时间判断与函数调用；不要sleep，不重新计算四轮速度。
+    if (elapsed_seconds < 3) {
+      publish_forward();
+    } else {
+      publish_stop();
+    }
+
+
+  }
+
   void publish_stop()
   {
     // CP16-C001：停止消息已通过验证，保留学习者代码。
@@ -103,6 +122,7 @@ private:
 
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
+  std::chrono::steady_clock::time_point segment_started_at_;
 };
 
 int main(int argc, char ** argv)
