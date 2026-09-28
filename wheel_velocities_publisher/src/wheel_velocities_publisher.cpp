@@ -11,8 +11,8 @@ public:
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
     timer_ = create_wall_timer(std::chrono::milliseconds(100),
-      [this]() { publish_clockwise(); });
-    RCLCPP_INFO(get_logger(), "CP16-C011 scaffold: complete publish_clockwise() before checking messages");
+      [this]() { publish_counterclockwise(); });
+    RCLCPP_INFO(get_logger(), "CP16-C013 scaffold: complete publish_counterclockwise() before checking messages");
   }
 
 private:
@@ -85,6 +85,20 @@ private:
     float wheel_speed_radps = (half_wheelbase_m + half_track_m) * body_angular_velocity_radps / wheel_radius_m;
     clockwise_msg.data = {-wheel_speed_radps, wheel_speed_radps, -wheel_speed_radps, wheel_speed_radps};
     publisher_->publish(clockwise_msg);
+  }
+
+  void publish_counterclockwise()
+  {
+    const float body_angular_velocity_radps = 0.50f;
+    const float half_wheelbase_m = 0.085f;
+    const float half_track_m = 0.135f;
+    const float wheel_radius_m = 0.05f;
+    // TODO CP16-C013：由给定参数计算并发布逆时针原地转向的四轮速度。
+    // 数组：[前左、前右、后左、后右]；单位rad/s，不写死轮速。
+    std_msgs::msg::Float32MultiArray counterclockwise_msg;
+    float wheel_speed_radps = (half_wheelbase_m + half_track_m) * body_angular_velocity_radps / wheel_radius_m;
+    counterclockwise_msg.data = {-wheel_speed_radps, wheel_speed_radps, -wheel_speed_radps, wheel_speed_radps};
+    publisher_->publish(counterclockwise_msg);
   }
 
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
