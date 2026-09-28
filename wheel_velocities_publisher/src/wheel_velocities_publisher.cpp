@@ -57,6 +57,8 @@ private:
     if (elapsed_seconds < 3.0) {
       publish_backward();
     } else {
+      // TODO CP16-C023：在此更新mode_，使状态记录与停止阶段一致。
+      mode_ = MotionMode::Stop;
       publish_stop();
     }
   }
