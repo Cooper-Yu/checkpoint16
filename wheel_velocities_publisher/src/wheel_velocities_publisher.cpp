@@ -17,22 +17,48 @@ public:
           std::chrono::steady_clock::now() - segment_started_at_).count();
         update_motion(elapsed_seconds);
       });
-    RCLCPP_INFO(get_logger(), "CP16-C017 scaffold: complete update_motion() before checking timing");
+    RCLCPP_INFO(get_logger(), "CP16-C020 scaffold: complete begin_backward() before checking timing");
   }
 
 private:
+  enum class MotionMode {
+    Forward,
+    Backward,
+    Left,
+    Right,
+    Clockwise,
+    Counterclockwise,
+    Stop
+  };
+
+  void begin_backward()
+  {
+    // TODO CP16-C020：进入后退时，更新mode_和segment_started_at_。
+    // mode_使用MotionMode枚举；起点使用当前steady_clock时间。
+    // 只完成这两个状态更新，消息发布由下面的辅助调度处理。
+    mode_ = MotionMode::Backward;
+    segment_started_at_ = std::chrono::steady_clock::now();
+
+  }
+
   void update_motion(double elapsed_seconds)
   {
-    // TODO CP16-C017：根据本段已过秒数，选择调用已有的运动发布函数。
-    // 要求：本段开始后的前3秒持续前进，达到3秒后持续发布停止。
-    // 只写时间判断与函数调用；不要sleep，不重新计算四轮速度。
-    if (elapsed_seconds < 3) {
-      publish_forward();
+    // Coach调度支持：沿用C017已通过的3秒判断，扩展到两段。
+    // C020学习者负责begin_backward()中的切换状态更新。
+    if (mode_ == MotionMode::Forward) {
+      if (elapsed_seconds < 3.0) {
+        publish_forward();
+      } else {
+        begin_backward();
+        publish_backward();
+      }
+      return;  // 本次elapsed属于前进段，不再拿它判断后退段。
+    }
+    if (elapsed_seconds < 3.0) {
+      publish_backward();
     } else {
       publish_stop();
     }
-
-
   }
 
   void publish_stop()
@@ -122,6 +148,7 @@ private:
 
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
+  MotionMode mode_ = MotionMode::Forward;  // 本切片仅调度前进和后退，后退满3秒停止。
   std::chrono::steady_clock::time_point segment_started_at_;
 };
 
