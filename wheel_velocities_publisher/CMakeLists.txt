@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.8)
+project(wheel_velocities_publisher)
+# Coach提供的本切片构建结构；不作为学习者CMake能力验收。
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+add_executable(wheel_velocities_publisher src/wheel_velocities_publisher.cpp)
+target_compile_features(wheel_velocities_publisher PUBLIC cxx_std_17)
+ament_target_dependencies(wheel_velocities_publisher rclcpp std_msgs)
+install(TARGETS wheel_velocities_publisher DESTINATION lib/${PROJECT_NAME})
+ament_package()
