@@ -158,7 +158,7 @@ public:
   {
     subscription_ = create_subscription<nav_msgs::msg::Odometry>(
       "/odom", 10, [this](nav_msgs::msg::Odometry::ConstSharedPtr msg) {
-        if (target_) return;  // Coach支持：本片仅在初始化时保存一次目标。
+
         const auto & p = msg->pose.pose.position;
         const auto & q = msg->pose.pose.orientation;
         const double norm2 = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
@@ -166,18 +166,29 @@ public:
             !std::isfinite(norm2) || norm2 < 1e-12) return;
         const double yaw = std::atan2(2.0*(q.w*q.z + q.x*q.y),
                                       norm2 - 2.0*(q.y*q.y + q.z*q.z));
-        const Pose2D start{p.x, p.y, yaw};
-        const SegmentDelta first_segment{0.0, 1.0, -1.0};
-        target_ = make_segment_target(start, first_segment);
-        if (!target_) {
-          RCLCPP_WARN_ONCE(get_logger(), "C041 target calculation is not implemented yet");
-          return;
+        accept_pose(Pose2D{p.x, p.y, yaw});
+        // Coach支持：本片只观察状态，暂不发布运动。
+        if (current_ && target_) {
+          RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+            "Current: %.3f %.3f %.3f; Target: %.3f %.3f %.3f",
+            current_->x, current_->y, current_->yaw,
+            target_->x, target_->y, target_->yaw);
         }
-        RCLCPP_INFO(get_logger(), "Target: x=%.3f y=%.3f yaw=%.3f",
-                    target_->x, target_->y, target_->yaw);
       });
   }
 private:
+  void accept_pose(const Pose2D & pose)
+  {
+    const SegmentDelta first_segment{0.0, 1.0, -1.0};
+    // TODO CP16-C049：每次保存最新pose；只在尚无目标时初始化首段目标。
+    // 成员current_、target_都是optional<Pose2D>；可直接赋值Pose2D。
+    // 已有make_segment_target(pose, first_segment)可生成目标。
+    current_ = pose;
+    if (!target_) {
+      target_ = make_segment_target(pose, first_segment);
+    }
+  }
+  std::optional<Pose2D> current_;
   std::optional<Pose2D> target_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscription_;
 };
