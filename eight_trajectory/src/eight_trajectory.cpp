@@ -54,6 +54,20 @@ std::optional<WorldVelocity> compute_world_velocity(const PositionError & error)
   return rho <= position_tolerance ? WorldVelocity {0, 0} : WorldVelocity {v * error.ex / rho, v * error.ey / rho};
 }
 
+// Coach支持：单独命名输出坐标系，避免混用世界与车身速度。
+struct BodyLinearVelocity { double vx; double vy; };
+std::optional<BodyLinearVelocity> world_to_body(
+  const WorldVelocity & world, double current_yaw)
+{
+  // TODO CP16-C044：使用当前朝向，将world转换为车身线速度。
+  // current_yaw单位rad；std::cos()/std::sin()输入弧度。
+  // 返回BodyLinearVelocity{vx, vy}；本函数不产生角速度。
+  const double vx = world.vx * std::cos(current_yaw) + world.vy * std::sin(current_yaw);
+  const double vy = -world.vx * std::sin(current_yaw) + world.vy * std::cos(current_yaw);
+
+  return BodyLinearVelocity{vx, vy};
+}
+
 class EightTrajectory : public rclcpp::Node
 {
 public:
