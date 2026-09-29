@@ -236,7 +236,16 @@ private:
       publish_stop();
       return;
     }
-    finished_ = finished_result.value();
+    // TODO CP16-C059：把本段到达与整个任务完成分开。
+    // 本段到达时调用advance_segment()一次，停车并结束本周期；下一周期处理新目标。
+    // 本段未到达时保留现有计算/发布路径；不再直接把到达结果赋给finished_。
+    // 下方旧单段逻辑待学习者修改，finished_由advance_segment维护。
+    if (finished_result.value()) {
+      advance_segment();
+      publish_stop();
+      return;
+    }
+
 
     if (!finished_) {
       const auto wheels_result = compute_wheel_command(target_.value(), current_.value());
