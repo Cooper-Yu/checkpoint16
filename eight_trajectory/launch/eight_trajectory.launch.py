@@ -6,7 +6,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     odom_topic = LaunchConfiguration("odom_topic")
     return LaunchDescription([
-        DeclareLaunchArgument("odom_topic", default_value="/odom"),
+        DeclareLaunchArgument("odom_topic", default_value="/rosbot_xl_base_controller/odom"),
         Node(
             package="eight_trajectory",
             executable="eight_trajectory",

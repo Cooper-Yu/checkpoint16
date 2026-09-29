@@ -23,7 +23,7 @@ Task 2: odometry -> eight_trajectory -> /wheel_speed -> kinematic_model -> /cmd_
 
 - `/wheel_speed`: `std_msgs/msg/Float32MultiArray`, ordered `[FL, FR, RL, RR]`, in rad/s.
 - `/cmd_vel`: `geometry_msgs/msg/Twist`; body x forward, y left, positive yaw counterclockwise.
-- Task 2 subscribes to `/odom` (`nav_msgs/msg/Odometry`) by default. Its launch argument `odom_topic` selects a different feedback topic.
+- The Task 2 node uses `/odom` (`nav_msgs/msg/Odometry`) internally. The launch defaults to remapping it to `/rosbot_xl_base_controller/odom`, verified in both local and cloud simulations. The `odom_topic` argument can override this mapping.
 - Odometry positions, goals, and world-frame velocities use the same fixed odometry frame. No TF conversion is performed.
 - Run only one wheel-command source at a time. Do not run the Task 1 publisher alongside Task 2.
 
@@ -81,17 +81,17 @@ Task 1:
 ros2 launch kinematic_model kinematic_model.launch.py
 ```
 
-Task 2 with the course `/odom` interface:
+Task 2 with the verified local and cloud controller odometry (no argument needed):
 
 ```bash
 ros2 launch eight_trajectory eight_trajectory.launch.py
 ```
 
-Task 2 with the locally verified controller odometry topic:
+For an environment that instead publishes `/odom`:
 
 ```bash
 ros2 launch eight_trajectory eight_trajectory.launch.py \
-  odom_topic:=/rosbot_xl_base_controller/odom
+  odom_topic:=/odom
 ```
 
 Local simulation used a separate `checkpoint16_sim_ws` workspace and `ROS_DOMAIN_ID=116`, `ROS_LOCALHOST_ONLY=1`. Set these only when matching that local simulator; do not assume the cloud uses the same values. The launch files start assignment nodes, not Gazebo.
@@ -119,10 +119,10 @@ Useful inspection commands, in a separately sourced terminal:
 ros2 topic info /wheel_speed --verbose
 ros2 topic info /cmd_vel --verbose
 ros2 topic echo /wheel_speed
-ros2 topic echo /odom
+ros2 topic echo /rosbot_xl_base_controller/odom
 ```
 
-Use the selected feedback topic instead of `/odom` when remapped. Cloud results have not yet been recorded as passing.
+Use the selected feedback topic if you override the default. Cloud trajectory logs match the eight planned targets; sustained final-stop evidence and formal course acceptance remain pending.
 
 ## Local validation (2026-09-29 to 2026-09-30)
 
