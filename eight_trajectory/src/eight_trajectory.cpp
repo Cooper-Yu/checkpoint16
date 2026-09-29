@@ -8,17 +8,13 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
 
-// Coach支持：数据结构、ROS接线与反馈保护；控制核心由学习者增量实现。
 struct Pose2D { double x; double y; double yaw; };
+// Relative waypoint changes: yaw in radians; x/y in the odometry frame, in meters.
 struct SegmentDelta { double dphi; double dx; double dy; };
 
 std::optional<Pose2D> make_segment_target(
   const Pose2D & start, const SegmentDelta & delta)
 {
-  // TODO CP16-C041：用start与delta构造并返回目标Pose2D。
-  // Pose2D字段顺序：x、y、yaw；SegmentDelta字段顺序：dphi、dx、dy。
-  // 返回语法：return Pose2D{表达式1, 表达式2, 表达式3};
-  // 本片只累加目标朝向；最短角度误差在后续控制切片处理。
 
   return Pose2D {
     start.x + delta.dx,
@@ -27,14 +23,10 @@ std::optional<Pose2D> make_segment_target(
   };
 }
 
-// Coach支持：C042只处理世界坐标位置误差，不处理朝向。
 struct PositionError { double ex; double ey; };
 std::optional<PositionError> compute_position_error(
   const Pose2D & target, const Pose2D & current)
 {
-  // TODO CP16-C042：按ex、ey顺序返回目标相对当前位置的误差。
-  // 返回写法：return PositionError{表达式1, 表达式2};
-
 
   return PositionError {
     target.x - current.x,
@@ -42,29 +34,22 @@ std::optional<PositionError> compute_position_error(
   };
 }
 
-// Coach支持：世界速度输出类型和教学参数；C043核心由学习者实现。
 struct WorldVelocity { double vx; double vy; };
 std::optional<WorldVelocity> compute_world_velocity(const PositionError & error)
 {
   const double position_tolerance = 0.02;  // m
   const double max_speed = 0.1;           // m/s
   const double distance_gain = 0.5;       // 1/s
-  // TODO CP16-C043：由error计算世界速度，先处理位置容差，再按比例限速。
-  // error.ex / error.ey单位m；返回WorldVelocity{vx, vy}，单位m/s。
-  // 支持API：std::hypot(a,b)求sqrt(a*a+b*b)，std::min(a,b)取较小值。
   const double rho = std::hypot(error.ex, error.ey);
   const double v = std::min(distance_gain * rho, max_speed);
   return rho <= position_tolerance ? WorldVelocity {0, 0} : WorldVelocity {v * error.ex / rho, v * error.ey / rho};
 }
 
-// Coach支持：单独命名输出坐标系，避免混用世界与车身速度。
 struct BodyLinearVelocity { double vx; double vy; };
+// Rotate the desired world velocity into the current body frame.
 std::optional<BodyLinearVelocity> world_to_body(
   const WorldVelocity & world, double current_yaw)
 {
-  // TODO CP16-C044：使用当前朝向，将world转换为车身线速度。
-  // current_yaw单位rad；std::cos()/std::sin()输入弧度。
-  // 返回BodyLinearVelocity{vx, vy}；本函数不产生角速度。
   const double vx = world.vx * std::cos(current_yaw) + world.vy * std::sin(current_yaw);
   const double vy = -world.vx * std::sin(current_yaw) + world.vy * std::cos(current_yaw);
 
@@ -73,10 +58,7 @@ std::optional<BodyLinearVelocity> world_to_body(
 
 std::optional<double> compute_heading_error(double target_yaw, double current_yaw)
 {
-  const double pi = std::acos(-1.0);  // Coach支持：弧度制π。
-  // TODO CP16-C045：计算目标减当前的朝向差，返回[-pi, pi]内的等价角差。
-  // 可通过加减整圈(2*pi)处理越界，目标yaw可能已经累加超过一圈。
-  // 此处只求角度误差，不计算角速度。恰好±pi时保留任一端点均可。
+  const double pi = std::acos(-1.0);
   return std::remainder(target_yaw - current_yaw, 2*pi);
 }
 
@@ -85,22 +67,17 @@ std::optional<double> compute_angular_velocity(double heading_error)
   const double heading_tolerance = 0.05;  // rad
   const double heading_gain = 1.0;        // 1/s
   const double max_angular_speed = 0.5;   // rad/s
-  // TODO CP16-C046：朝向容差内返回0，否则按比例并双向限幅，保留符号。
-  // 支持API：std::abs(x)求绝对值；std::clamp(value, lower, upper)限制范围。
   const double angular_speed = heading_gain * heading_error;
   return std::abs(heading_error) <= heading_tolerance ? 0 : std::clamp(angular_speed, -max_angular_speed, max_angular_speed);
 }
 
-// Coach支持：WheelSpeeds按FL、FR、RL、RR排列，单位rad/s。
+// Wheel order: front left, front right, rear left, rear right; rad/s.
 using WheelSpeeds = std::array<double, 4>;
 std::optional<WheelSpeeds> body_to_wheels(
   const BodyLinearVelocity & body, double omega)
 {
   const double wheel_radius = 0.05;  // m
-  const double k = 0.085 + 0.135;    // m，前后/左右半距之和
-  // TODO CP16-C047：将body.vx、body.vy、omega转换为四轮角速度。
-  // 返回写法：return WheelSpeeds{前左表达式, 前右表达式, 后左表达式, 后右表达式};
-  // 使用已学麦轮关系，保留各项符号与轮半径；本片不发布话题。
+  const double k = 0.085 + 0.135;
   const double vx = body.vx;
   const double vy = body.vy;
   return WheelSpeeds {
@@ -114,16 +91,11 @@ std::optional<WheelSpeeds> body_to_wheels(
 std::optional<WheelSpeeds> compute_wheel_command(
   const Pose2D & target, const Pose2D & current)
 {
-  // Coach支持：过滤无效输入，后续计算仅接收有限位姿。
   if (!std::isfinite(target.x) || !std::isfinite(target.y) ||
       !std::isfinite(target.yaw) || !std::isfinite(current.x) ||
       !std::isfinite(current.y) || !std::isfinite(current.yaw)) {
     return std::nullopt;
   }
-  // TODO CP16-C048：调用上面已完成的函数，串起目标/反馈到四轮命令。
-  // 使用current.yaw做世界→车身转换；不要把目标朝向用于该转换。
-  // 已完成函数目前对正常有限输入均返回有值optional，可用.value()取值。
-  // 可用const auto保存每一步结果；无需重写各函数内部公式。
   const auto position_error_result = compute_position_error(target, current);
   if (!position_error_result) {
     return std::nullopt;
@@ -155,12 +127,8 @@ std::optional<WheelSpeeds> compute_wheel_command(
 
 std::optional<bool> segment_reached(const Pose2D & target, const Pose2D & current)
 {
-  const double position_tolerance = 0.02;  // m，与平移停止条件一致
-  const double heading_tolerance = 0.05;   // rad，与转向停止条件一致
-  // TODO CP16-C050：位置和朝向同时达标才返回true，否则返回false。
-  // 可调用compute_position_error和compute_heading_error，不重写角度wrap。
-  // 位置条件比较误差长度，朝向条件比较最短角差的绝对值，均包含边界。
-  // 注意optional<bool>有值不代表其中的bool为true，调用方须取.value()。
+  const double position_tolerance = 0.02;
+  const double heading_tolerance = 0.05;
   const auto position_error_result = compute_position_error(target, current);
   if (!position_error_result) {
     return std::nullopt;
@@ -180,7 +148,7 @@ public:
   EightTrajectory() : Node("eight_trajectory")
   {
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
-    // Coach支持：无有效反馈、反馈超过0.5s未更新或本段已完成时持续发零。
+    // Stop on missing/stale feedback or completion; timeout uses steady wall time.
     timer_ = create_wall_timer(std::chrono::milliseconds(100), [this]() {
       if (finished_ || !current_ || !target_ || !last_pose_at_ ||
           std::chrono::steady_clock::now() - *last_pose_at_ > std::chrono::milliseconds(500)) {
@@ -201,7 +169,6 @@ public:
                                       norm2 - 2.0*(q.y*q.y + q.z*q.z));
         accept_pose(Pose2D{p.x, p.y, yaw});
         last_pose_at_ = std::chrono::steady_clock::now();
-        // Coach支持：节流日志观察位姿与固定目标。
         if (current_ && target_) {
           RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
             "Current: %.3f %.3f %.3f; Target: %.3f %.3f %.3f",
@@ -214,38 +181,25 @@ private:
   void accept_pose(const Pose2D & pose)
   {
     const SegmentDelta first_segment{0.0, 1.0, -1.0};
-    // TODO CP16-C049：每次保存最新pose；只在尚无目标时初始化首段目标。
-    // 成员current_、target_都是optional<Pose2D>；可直接赋值Pose2D。
-    // 已有make_segment_target(pose, first_segment)可生成目标。
     current_ = pose;
+    // Fix the initial target once; later feedback only updates the current pose.
     if (!target_) {
       target_ = make_segment_target(pose, first_segment);
     }
   }
-  // CP16-C052：调用前已保证current_、target_有值且反馈新鲜。
   void update_motion()
   {
-    // TODO CP16-C052：组织单段控制决策。
-    // 使用segment_reached与compute_wheel_command，不重写公式。
-    // 无计算结果：publish_stop()并结束本次回调。
-    // 已到达：finished_=true并停车；未到达：发布计算得到的四轮速度。
-    // 可用publish_wheels(WheelSpeeds)或publish_stop()，均返回void。
-    // 替换下面的临时停车语句。
     const auto finished_result = segment_reached(target_.value(), current_.value());
     if (!finished_result) {
       publish_stop();
       return;
     }
-    // TODO CP16-C059：把本段到达与整个任务完成分开。
-    // 本段到达时调用advance_segment()一次，停车并结束本周期；下一周期处理新目标。
-    // 本段未到达时保留现有计算/发布路径；不再直接把到达结果赋给finished_。
-    // 下方旧单段逻辑待学习者修改，finished_由advance_segment维护。
+    // Pause this cycle after arrival; the next cycle tracks the next planned target.
     if (finished_result.value()) {
       advance_segment();
       publish_stop();
       return;
     }
-
 
     if (!finished_) {
       const auto wheels_result = compute_wheel_command(target_.value(), current_.value());
@@ -263,7 +217,6 @@ private:
 
   }
 
-  // Coach支持：将数组封装为现有/wheel_speed接口；非有限值转为停车。
   void publish_wheels(const WheelSpeeds & wheels)
   {
     std_msgs::msg::Float32MultiArray msg;
@@ -281,7 +234,6 @@ private:
     publisher_->publish(msg);
   }
 
-  // Coach支持：课程给定增量，字段顺序为dphi、dx、dy。
   const std::array<SegmentDelta, 8> segments{{
     {0.0, 1.0, -1.0}, {0.0, 1.0, 1.0},
     {0.0, 1.0, 1.0}, {-1.5708, 1.0, -1.0},
@@ -290,14 +242,10 @@ private:
   }};
   std::size_t segment_index_{0};
 
-  // CP16-C058：前提为本段到达、target_有值、当前索引有效。
-  // 本片先独立验证，尚未接入update_motion。
+  // Called only after arrival, with a valid target and segment index.
+  // Accumulate from planned targets so stopping tolerance does not shift later waypoints.
   void advance_segment()
   {
-    // TODO CP16-C058：完成一次航段推进，只更新状态，不发布消息。
-    // 还有下一段时：推进索引，取对应增量，以原计划target_生成下一目标，
-    // 保持finished_为false；已是最后一段时：finished_=true，不改变索引/目标。
-    // segments[index]取得SegmentDelta；已有make_segment_target可复用。
     segment_index_  < segments.size() - 1 ? finished_ = false : finished_ = true;
     if (!finished_) {
       target_ = make_segment_target(target_.value(), segments[++segment_index_]);

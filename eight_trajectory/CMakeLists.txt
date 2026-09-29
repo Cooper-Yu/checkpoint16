@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
 project(eight_trajectory)
-# Coach支持：构建接线，不计学习者CMake验收。
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(nav_msgs REQUIRED)

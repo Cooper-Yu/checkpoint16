@@ -1,71 +1,146 @@
 # Checkpoint 16 — Mobile Robot Kinematics
 
-A ROSBot XL mecanum-wheel learning project targeting Ubuntu 22.04, ROS 2 Humble, and Gazebo Fortress. The learner implements the core code incrementally, with scaffolding, review, and verification support from the coach. Simulation dependencies are managed separately; original course materials are not included.
+ROSBot XL mecanum-wheel exercises for Ubuntu 22.04, ROS 2 Humble, and Gazebo Fortress. Core implementations were written incrementally by the learner with coaching, scaffolding, and verification support. Course materials and simulator dependencies are not included.
 
-## Current status
+## Status
 
-- Task 1: wheel-speed publishing, forward kinematics, and a launch file for both nodes are implemented. Local message checks and simulation odometry checks have passed.
-- Task 2: `eight_trajectory` is not implemented yet.
-- Independent Gazebo model-pose checks and final validation in the course cloud environment remain pending. The full checkpoint is not complete.
+- Task 1: timed wheel commands, forward kinematics, and two-node launch implemented and locally verified.
+- Task 2: odometry feedback, eight-segment trajectory, waypoint transitions, timeout stopping, and two-node launch implemented and locally verified. A reduced-help coordinate-transform reconstruction also passed.
+- Course cloud acceptance is pending. Local motion evidence uses controller odometry; independent Gazebo model-pose validation remains pending.
 
-## Data flow and conventions
+## Packages and interfaces
 
-`wheel_velocities_publisher` → `/wheel_speed` → `kinematic_model` → `/cmd_vel` → simulation controller
+| Package | Responsibility |
+| --- | --- |
+| `wheel_velocities_publisher` | Task 1: forward, backward, left, right, clockwise, counterclockwise, then stop |
+| `kinematic_model` | Convert four wheel velocities into body-frame Twist commands |
+| `eight_trajectory` | Task 2: follow eight planned waypoints using odometry feedback |
 
-- `/wheel_speed`: `std_msgs/msg/Float32MultiArray`, ordered `[FL, FR, RL, RR]` (front left, front right, rear left, rear right), in rad/s.
-- `/cmd_vel`: `geometry_msgs/msg/Twist`. In the body frame, x points forward, y points left, and positive rotation about z is counterclockwise when viewed from above.
-- The publisher checks its motion stage every 100 ms. It commands forward, backward, left, right, clockwise, and counterclockwise motion for approximately 3 seconds each, then continuously publishes zero wheel speeds. Timer resolution and scheduling affect transition times.
-- Translation commands have magnitude 0.1 m/s; rotation commands have magnitude 0.5 rad/s. This is a timed sequence without closed-loop odometry correction.
-- The model rejects inputs whose length is not four or that contain non-finite values. No input-timeout stop is implemented; rejecting an input does not actively publish a zero command.
+```text
+Task 1: wheel_velocities_publisher -> /wheel_speed -> kinematic_model -> /cmd_vel
+Task 2: odometry -> eight_trajectory -> /wheel_speed -> kinematic_model -> /cmd_vel
+```
 
-## Geometry and model
+- `/wheel_speed`: `std_msgs/msg/Float32MultiArray`, ordered `[FL, FR, RL, RR]`, in rad/s.
+- `/cmd_vel`: `geometry_msgs/msg/Twist`; body x forward, y left, positive yaw counterclockwise.
+- Task 2 subscribes to `/odom` (`nav_msgs/msg/Odometry`) by default. Its launch argument `odom_topic` selects a different feedback topic.
+- Odometry positions, goals, and world-frame velocities use the same fixed odometry frame. No TF conversion is performed.
+- Run only one wheel-command source at a time. Do not run the Task 1 publisher alongside Task 2.
 
-Wheel radius `r = 0.05 m`; front-to-rear wheel-center distance `0.17 m`; left-to-right wheel-center distance `0.27 m`. The corresponding half-distances are `lx = 0.085 m` and `ly = 0.135 m`, so `k = lx + ly = 0.22 m`.
+## Kinematics and control
+
+The configured wheel radius is `r = 0.05 m`. Wheel-center distances are `0.17 m` front-to-rear and `0.27 m` left-to-right, giving `k = 0.085 + 0.135 = 0.22 m`. These parameters were checked against local and course cloud configurations. The drawing's lateral dimension is 269.69 mm; the code uses the configured 270 mm.
 
 ```text
 vx = r/4     * ( w_FL + w_FR + w_RL + w_RR)
 vy = r/4     * (-w_FL + w_FR + w_RL - w_RR)
-Ω  = r/(4*k) * (-w_FL + w_FR - w_RL + w_RR)
+omega = r/(4*k) * (-w_FL + w_FR - w_RL + w_RR)
 ```
 
-These three geometry parameters were checked against both the local and course cloud configurations. The drawing specifies a lateral wheel-center distance of 269.69 mm, slightly different from the configured 270 mm used by the code.
+Task 1 checks stages every 100 ms, commanding each motion for approximately 3 seconds. Translation magnitude is 0.1 m/s and rotation magnitude is 0.5 rad/s. It continuously publishes zero after the final stage.
 
-## Build and run
+Task 2 initializes its first goal from the first valid pose. Subsequent goals accumulate the configured world-frame increments from the previous planned goal, rather than from the actual stopping position. Translation and rotation can occur simultaneously.
 
-On Ubuntu 22.04 with ROS 2 Humble and colcon configured, place this repository at `~/ros2_ws/src/checkpoint16`:
+| Setting | Value |
+| --- | --- |
+| Control period | 100 ms |
+| Position tolerance | 0.02 m |
+| Heading tolerance | 0.05 rad |
+| Distance gain | 0.5 /s |
+| Maximum linear speed | 0.1 m/s |
+| Heading gain | 1.0 /s |
+| Maximum angular speed | 0.5 rad/s |
+| Feedback timeout | 0.5 s, steady wall time |
+
+Linear speed is proportional to distance, capped at the maximum and zero inside tolerance. The desired world velocity is rotated into the body frame using the current yaw. Heading control uses the shortest wrapped error and symmetric angular speed limits. A waypoint completes only when both tolerances are satisfied. The controller sends zero during the transition cycle and continuously after all eight segments complete.
+
+Missing or stale feedback causes repeated zero wheel commands. Fresh feedback resumes an unfinished trajectory. Feedback freshness measures local receipt time, not the message timestamp. Numeric pose/quaternion validation is performed; this is not a full estimator-quality check. The final heading changes by approximately -pi relative to the start; returning near the starting position does not mean returning to the starting orientation.
+
+`kinematic_model` rejects malformed or non-finite wheel inputs but has no independent input-timeout stop. Task 2's timeout protection requires that node to remain running; downstream controller timeout behavior is environment-dependent.
+
+## Build
+
+Place the repository at `~/ros2_ws/src/checkpoint16`:
 
 ```bash
 source /opt/ros/humble/setup.bash
 cd ~/ros2_ws
-colcon build --packages-select wheel_velocities_publisher kinematic_model
+colcon build --packages-select wheel_velocities_publisher kinematic_model eight_trajectory
 source install/setup.bash
+```
+
+ROS dependencies include `rclcpp`, `std_msgs`, `geometry_msgs`, `nav_msgs`, `launch`, and `launch_ros`.
+
+## Run
+
+First start the compatible ROSBot XL mecanum simulation. Use matching ROS domain and localhost settings in all simulation and application terminals.
+
+Task 1:
+
+```bash
 ros2 launch kinematic_model kinematic_model.launch.py
 ```
 
-The launch file starts only the two assignment nodes. To inspect messages, use another terminal with the same environment sourced:
+Task 2 with the course `/odom` interface:
 
 ```bash
-ros2 topic echo /wheel_speed
-ros2 topic echo /cmd_vel
+ros2 launch eight_trajectory eight_trajectory.launch.py
 ```
 
-For Gazebo integration, first start a compatible ROSBot XL mecanum-wheel simulation whose controller subscribes to `/cmd_vel`. The assignment and simulation processes must use matching `ROS_DOMAIN_ID` and `ROS_LOCALHOST_ONLY` settings. Avoid running other velocity publishers simultaneously.
+Task 2 with the locally verified controller odometry topic:
 
-Local validation used a separate `checkpoint16_sim_ws` workspace with `ROS_DOMAIN_ID=116` and `ROS_LOCALHOST_ONLY=1`. Simulation dependencies and adaptation scripts are not distributed with this repository. Feedback was read from `/rosbot_xl_base_controller/odom`, and output on `/odometry/filtered` was also checked. Other course versions may require different configuration.
+```bash
+ros2 launch eight_trajectory eight_trajectory.launch.py \
+  odom_topic:=/rosbot_xl_base_controller/odom
+```
 
-## Validation performed (2026-09-29)
+Local simulation used a separate `checkpoint16_sim_ws` workspace and `ROS_DOMAIN_ID=116`, `ROS_LOCALHOST_ONLY=1`. Set these only when matching that local simulator; do not assume the cloud uses the same values. The launch files start assignment nodes, not Gazebo.
+
+## Cloud acceptance checklist
+
+Use the `codex/checkpoint16` branch. For a new checkout:
+
+```bash
+mkdir -p ~/ros2_ws/src
+git clone --branch codex/checkpoint16 \
+  https://github.com/Cooper-Yu/checkpoint16.git ~/ros2_ws/src/checkpoint16
+```
+
+For an existing checkout, inspect local changes before updating; do not overwrite uncommitted cloud work. Build and source the workspace as above, then:
+
+1. Start the course simulation with mecanum wheels and check its actual odometry topic and `/cmd_vel` interface.
+2. Stop any other wheel or velocity command publisher.
+3. Start the Task 2 launch, overriding `odom_topic` only if required.
+4. Observe all eight waypoints, the two rotation segments, and sustained stopping at the end. Confirm each position and heading against the course requirements.
+
+Useful inspection commands, in a separately sourced terminal:
+
+```bash
+ros2 topic info /wheel_speed --verbose
+ros2 topic info /cmd_vel --verbose
+ros2 topic echo /wheel_speed
+ros2 topic echo /odom
+```
+
+Use the selected feedback topic instead of `/odom` when remapped. Cloud results have not yet been recorded as passing.
+
+## Local validation (2026-09-29 to 2026-09-30)
 
 | Check | Result |
 | --- | --- |
-| Build both C++ packages | Passed |
-| Nine model inputs: six directions, two mixed motions, and zero speed | All Twist components matched |
-| Independent prediction and runtime check for input `[1,3,3,1]` | `(0.1 m/s, 0.05 m/s, 0 rad/s)` |
-| Launch both nodes in isolated domain 117 | 213 wheel-speed messages and 213 Twist messages; correct six-direction and stop sequence |
-| Gazebo integration in domain 116 | Odometry translation approximately ±0.1 m/s, rotation approximately ±0.5 rad/s, and final velocity approximately zero; all seven stages passed |
+| Task 1 model inputs and timed sequence | Six directions, mixed inputs, zero command, and stage transitions passed |
+| Task 1 Gazebo controller odometry | Approximately ±0.1 m/s translation, ±0.5 rad/s rotation, then stop |
+| Task 2 helper and transition tests | Coordinate transforms, tolerances, planned goal accumulation, eight transitions, final boundary, and invalid-result branches passed |
+| Task 2 controlled ROS input | Missing/stale feedback stopping, recovery, and final completion behavior passed |
+| Full eight-segment Gazebo run | Eight waypoints entered both tolerances in order; final stable stop after about 136.4 s |
+| Full-run final errors | Position 0.01850 m; shortest heading error 0.04753 rad |
+| Task 2 launch | Two intended nodes, one publisher per command topic, odometry remapping, expected Twist output, and timeout stop passed |
+| Reduced-help learner reconstruction | Six known-vector and four norm/round-trip coordinate-transform checks passed |
 
-Validation used coach-provided helper scripts outside this repository. Detailed training records and raw logs remain local. This repository does not yet include a directly runnable automated test suite. Matching controller odometry does not constitute independent model-pose verification.
+The full run started at yaw 0.02000 rad, so its planned final yaw was -3.12160 rad; measured final yaw was -3.07407 rad, within tolerance. Recorded waypoint position errors were below 0.02 m and heading errors below 0.05 rad.
 
-## Next steps
+Coach-provided verification helpers and raw logs remain outside this repository in local training records. No self-contained automated test suite is shipped here. These results do not replace independent simulator ground truth or course cloud acceptance.
 
-- Check independent simulation poses and validate interfaces and execution in the course cloud environment.
-- Incrementally implement `eight_trajectory`, pose feedback, and trajectory validation.
+## License
+
+No reuse license has been selected. Package metadata is marked `UNLICENSED`; publishing the repository does not grant an open-source license.

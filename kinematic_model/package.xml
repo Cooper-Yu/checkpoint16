@@ -4,7 +4,7 @@
   <version>0.0.0</version>
   <description>Incremental learner-owned wheel-to-body kinematic model for Checkpoint16.</description>
   <maintainer email="194167803+Cooper-Yu@users.noreply.github.com">Cooper-Yu</maintainer>
-  <license>TODO</license>
+  <license>UNLICENSED</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>

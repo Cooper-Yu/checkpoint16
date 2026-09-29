@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
 project(wheel_velocities_publisher)
-# Coach提供的本切片构建结构；不作为学习者CMake能力验收。
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)

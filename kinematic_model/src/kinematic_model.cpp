@@ -5,8 +5,6 @@
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 
-// Coach支持：节点接线、输入检查、轮序别名和消息发布。
-// 学习者逐分量实现计算；当前不是完整运动学模型，不用于仿真联动。
 class KinematicModel : public rclcpp::Node
 {
 public:
@@ -32,21 +30,17 @@ private:
     const double wheel_radius_m = 0.05;
     const double half_wheelbase_m = 0.085;
     const double half_track_m = 0.135;
+    // Input order: FL, FR, RL, RR; wheel angular velocities in rad/s.
     const double w_fl = msg.data[0];
     const double w_fr = msg.data[1];
     const double w_rl = msg.data[2];
     const double w_rr = msg.data[3];
     geometry_msgs::msg::Twist cmd;
 
-    // TODO CP16-C035：使用上述变量计算vx，赋给cmd.linear.x。
-    // C035前向分量已验证；保持学习者公式。
     cmd.linear.x = wheel_radius_m / 4 * (w_fl + w_fr + w_rl + w_rr);
 
-    // TODO CP16-C036：计算vy，赋给cmd.linear.y；angular.z暂留零。
     cmd.linear.y = wheel_radius_m / 4 * (-w_fl + w_fr + w_rl - w_rr);
 
-    // TODO CP16-C037：计算车身角速度，赋给cmd.angular.z。
-    // k是两个半距之和，使用给定变量，不写死结果。
     cmd.angular.z = wheel_radius_m / (4 * (half_wheelbase_m + half_track_m)) * (-w_fl + w_fr - w_rl + w_rr);
     publisher_->publish(cmd);
   }
