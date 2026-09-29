@@ -151,6 +151,27 @@ std::optional<WheelSpeeds> compute_wheel_command(
   return body_to_wheels(linear_velocity, angular_velocity);
 }
 
+std::optional<bool> segment_reached(const Pose2D & target, const Pose2D & current)
+{
+  const double position_tolerance = 0.02;  // m，与平移停止条件一致
+  const double heading_tolerance = 0.05;   // rad，与转向停止条件一致
+  // TODO CP16-C050：位置和朝向同时达标才返回true，否则返回false。
+  // 可调用compute_position_error和compute_heading_error，不重写角度wrap。
+  // 位置条件比较误差长度，朝向条件比较最短角差的绝对值，均包含边界。
+  // 注意optional<bool>有值不代表其中的bool为true，调用方须取.value()。
+  const auto position_error_result = compute_position_error(target, current);
+  if (!position_error_result) {
+    return std::nullopt;
+  }
+  const auto position_error = position_error_result.value();
+  const auto heading_error_result = compute_heading_error(target.yaw, current.yaw);
+  if (!heading_error_result) {
+    return std::nullopt;
+  }
+  const auto heading_error = heading_error_result.value();
+  return  std::hypot(position_error.ex, position_error.ey) <= position_tolerance &&  std::abs(heading_error) <= heading_tolerance;
+}
+
 class EightTrajectory : public rclcpp::Node
 {
 public:
