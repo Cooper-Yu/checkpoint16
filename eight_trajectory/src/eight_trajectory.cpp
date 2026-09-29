@@ -77,6 +77,17 @@ std::optional<double> compute_heading_error(double target_yaw, double current_ya
   return std::remainder(target_yaw - current_yaw, 2*pi);
 }
 
+std::optional<double> compute_angular_velocity(double heading_error)
+{
+  const double heading_tolerance = 0.05;  // rad
+  const double heading_gain = 1.0;        // 1/s
+  const double max_angular_speed = 0.5;   // rad/s
+  // TODO CP16-C046：朝向容差内返回0，否则按比例并双向限幅，保留符号。
+  // 支持API：std::abs(x)求绝对值；std::clamp(value, lower, upper)限制范围。
+  const double angular_speed = heading_gain * heading_error;
+  return std::abs(heading_error) <= heading_tolerance ? 0 : std::clamp(angular_speed, -max_angular_speed, max_angular_speed);
+}
+
 class EightTrajectory : public rclcpp::Node
 {
 public:
