@@ -1,3 +1,4 @@
+#include <chrono>
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -5,8 +6,9 @@
 #include <optional>
 #include "rclcpp/rclcpp.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "std_msgs/msg/float32_multi_array.hpp"
 
-// Coach支持：数据结构、订阅与姿态提取；当前切片不发布运动命令。
+// Coach支持：数据结构、ROS接线与反馈保护；控制核心由学习者增量实现。
 struct Pose2D { double x; double y; double yaw; };
 struct SegmentDelta { double dphi; double dx; double dy; };
 
@@ -177,6 +179,16 @@ class EightTrajectory : public rclcpp::Node
 public:
   EightTrajectory() : Node("eight_trajectory")
   {
+    publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
+    // Coach支持：无有效反馈、反馈超过0.5s未更新或本段已完成时持续发零。
+    timer_ = create_wall_timer(std::chrono::milliseconds(100), [this]() {
+      if (finished_ || !current_ || !target_ || !last_pose_at_ ||
+          std::chrono::steady_clock::now() - *last_pose_at_ > std::chrono::milliseconds(500)) {
+        publish_stop();
+        return;
+      }
+      update_motion();
+    });
     subscription_ = create_subscription<nav_msgs::msg::Odometry>(
       "/odom", 10, [this](nav_msgs::msg::Odometry::ConstSharedPtr msg) {
 
@@ -188,7 +200,8 @@ public:
         const double yaw = std::atan2(2.0*(q.w*q.z + q.x*q.y),
                                       norm2 - 2.0*(q.y*q.y + q.z*q.z));
         accept_pose(Pose2D{p.x, p.y, yaw});
-        // Coach支持：本片只观察状态，暂不发布运动。
+        last_pose_at_ = std::chrono::steady_clock::now();
+        // Coach支持：节流日志观察位姿与固定目标。
         if (current_ && target_) {
           RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
             "Current: %.3f %.3f %.3f; Target: %.3f %.3f %.3f",
@@ -209,6 +222,60 @@ private:
       target_ = make_segment_target(pose, first_segment);
     }
   }
+  // CP16-C052：调用前已保证current_、target_有值且反馈新鲜。
+  void update_motion()
+  {
+    // TODO CP16-C052：组织单段控制决策。
+    // 使用segment_reached与compute_wheel_command，不重写公式。
+    // 无计算结果：publish_stop()并结束本次回调。
+    // 已到达：finished_=true并停车；未到达：发布计算得到的四轮速度。
+    // 可用publish_wheels(WheelSpeeds)或publish_stop()，均返回void。
+    // 替换下面的临时停车语句。
+    const auto finished_result = segment_reached(target_.value(), current_.value());
+    if (!finished_result) {
+      publish_stop();
+      return;
+    }
+    finished_ = finished_result.value();
+
+    if (!finished_) {
+      const auto wheels_result = compute_wheel_command(target_.value(), current_.value());
+      if (!wheels_result) {
+        publish_stop();
+        return;
+      }
+      const auto wheels = wheels_result.value();
+      publish_wheels(wheels);
+      return;
+    }
+
+    publish_stop();
+    return;
+
+  }
+
+  // Coach支持：将数组封装为现有/wheel_speed接口；非有限值转为停车。
+  void publish_wheels(const WheelSpeeds & wheels)
+  {
+    std_msgs::msg::Float32MultiArray msg;
+    for (double w : wheels) {
+      const float value = static_cast<float>(w);
+      if (!std::isfinite(value)) { publish_stop(); return; }
+      msg.data.push_back(value);
+    }
+    publisher_->publish(msg);
+  }
+  void publish_stop()
+  {
+    std_msgs::msg::Float32MultiArray msg;
+    msg.data = {0.0F, 0.0F, 0.0F, 0.0F};
+    publisher_->publish(msg);
+  }
+
+  bool finished_{false};
+  std::optional<std::chrono::steady_clock::time_point> last_pose_at_;
+  rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
+  rclcpp::TimerBase::SharedPtr timer_;
   std::optional<Pose2D> current_;
   std::optional<Pose2D> target_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscription_;
