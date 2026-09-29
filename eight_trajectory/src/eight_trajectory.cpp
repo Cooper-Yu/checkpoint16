@@ -109,6 +109,48 @@ std::optional<WheelSpeeds> body_to_wheels(
   };
 }
 
+std::optional<WheelSpeeds> compute_wheel_command(
+  const Pose2D & target, const Pose2D & current)
+{
+  // Coach支持：过滤无效输入，后续计算仅接收有限位姿。
+  if (!std::isfinite(target.x) || !std::isfinite(target.y) ||
+      !std::isfinite(target.yaw) || !std::isfinite(current.x) ||
+      !std::isfinite(current.y) || !std::isfinite(current.yaw)) {
+    return std::nullopt;
+  }
+  // TODO CP16-C048：调用上面已完成的函数，串起目标/反馈到四轮命令。
+  // 使用current.yaw做世界→车身转换；不要把目标朝向用于该转换。
+  // 已完成函数目前对正常有限输入均返回有值optional，可用.value()取值。
+  // 可用const auto保存每一步结果；无需重写各函数内部公式。
+  const auto position_error_result = compute_position_error(target, current);
+  if (!position_error_result) {
+    return std::nullopt;
+  }
+  const auto position_error = position_error_result.value();
+  const auto world_velocity = compute_world_velocity(position_error);
+  if (!world_velocity) {
+    return std::nullopt;
+  }
+  const auto world_velocity_vxy = world_velocity.value();
+  const auto linear_velocity_result = world_to_body(world_velocity_vxy, current.yaw);
+  if (!linear_velocity_result) {
+    return std::nullopt;
+  }
+  const auto linear_velocity = linear_velocity_result.value();
+  const auto heading_error_result = compute_heading_error(target.yaw, current.yaw);
+  if (!heading_error_result) {
+    return std::nullopt;
+  }
+  const auto heading_error = heading_error_result.value();
+  const auto angular_velocity_result = compute_angular_velocity(heading_error);
+  if (!angular_velocity_result) {
+    return std::nullopt;
+  }
+  const auto angular_velocity = angular_velocity_result.value();
+
+  return body_to_wheels(linear_velocity, angular_velocity);
+}
+
 class EightTrajectory : public rclcpp::Node
 {
 public:
