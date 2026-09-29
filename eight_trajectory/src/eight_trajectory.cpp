@@ -68,6 +68,15 @@ std::optional<BodyLinearVelocity> world_to_body(
   return BodyLinearVelocity{vx, vy};
 }
 
+std::optional<double> compute_heading_error(double target_yaw, double current_yaw)
+{
+  const double pi = std::acos(-1.0);  // Coach支持：弧度制π。
+  // TODO CP16-C045：计算目标减当前的朝向差，返回[-pi, pi]内的等价角差。
+  // 可通过加减整圈(2*pi)处理越界，目标yaw可能已经累加超过一圈。
+  // 此处只求角度误差，不计算角速度。恰好±pi时保留任一端点均可。
+  return std::remainder(target_yaw - current_yaw, 2*pi);
+}
+
 class EightTrajectory : public rclcpp::Node
 {
 public:
