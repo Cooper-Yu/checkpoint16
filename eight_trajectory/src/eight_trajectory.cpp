@@ -1,3 +1,4 @@
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -86,6 +87,26 @@ std::optional<double> compute_angular_velocity(double heading_error)
   // 支持API：std::abs(x)求绝对值；std::clamp(value, lower, upper)限制范围。
   const double angular_speed = heading_gain * heading_error;
   return std::abs(heading_error) <= heading_tolerance ? 0 : std::clamp(angular_speed, -max_angular_speed, max_angular_speed);
+}
+
+// Coach支持：WheelSpeeds按FL、FR、RL、RR排列，单位rad/s。
+using WheelSpeeds = std::array<double, 4>;
+std::optional<WheelSpeeds> body_to_wheels(
+  const BodyLinearVelocity & body, double omega)
+{
+  const double wheel_radius = 0.05;  // m
+  const double k = 0.085 + 0.135;    // m，前后/左右半距之和
+  // TODO CP16-C047：将body.vx、body.vy、omega转换为四轮角速度。
+  // 返回写法：return WheelSpeeds{前左表达式, 前右表达式, 后左表达式, 后右表达式};
+  // 使用已学麦轮关系，保留各项符号与轮半径；本片不发布话题。
+  const double vx = body.vx;
+  const double vy = body.vy;
+  return WheelSpeeds {
+    (vx - vy - k * omega) / wheel_radius,
+    (vx + vy + k * omega) / wheel_radius,
+    (vx + vy - k * omega) / wheel_radius,
+    (vx - vy + k * omega) / wheel_radius,
+  };
 }
 
 class EightTrajectory : public rclcpp::Node
