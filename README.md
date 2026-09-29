@@ -6,7 +6,7 @@ ROSBot XL mecanum-wheel exercises for Ubuntu 22.04, ROS 2 Humble, and Gazebo For
 
 - Task 1: timed wheel commands, forward kinematics, and two-node launch implemented and locally verified.
 - Task 2: odometry feedback, eight-segment trajectory, waypoint transitions, timeout stopping, and two-node launch implemented and locally verified. A reduced-help coordinate-transform reconstruction also passed.
-- Course cloud acceptance is pending. Local motion evidence uses controller odometry; independent Gazebo model-pose validation remains pending.
+- The learner confirmed normal cloud trajectory behavior after switching to `/odometry/filtered`. At rest, filtered odometry matched the Gazebo model pose within 2.3 mm with matching yaw; raw controller odometry differed substantially. Full dynamic ground-truth measurements and formal grading remain pending.
 
 ## Packages and interfaces
 
@@ -23,7 +23,7 @@ Task 2: odometry -> eight_trajectory -> /wheel_speed -> kinematic_model -> /cmd_
 
 - `/wheel_speed`: `std_msgs/msg/Float32MultiArray`, ordered `[FL, FR, RL, RR]`, in rad/s.
 - `/cmd_vel`: `geometry_msgs/msg/Twist`; body x forward, y left, positive yaw counterclockwise.
-- The Task 2 node uses `/odom` (`nav_msgs/msg/Odometry`) internally. The launch defaults to remapping it to `/rosbot_xl_base_controller/odom`, verified in both local and cloud simulations. The `odom_topic` argument can override this mapping.
+- The Task 2 node uses `/odom` (`nav_msgs/msg/Odometry`) internally. The launch defaults to remapping it to `/odometry/filtered`, selected after the cloud model-pose comparison and learner runtime confirmation. The `odom_topic` argument can override this mapping.
 - Odometry positions, goals, and world-frame velocities use the same fixed odometry frame. No TF conversion is performed.
 - Run only one wheel-command source at a time. Do not run the Task 1 publisher alongside Task 2.
 
@@ -81,7 +81,7 @@ Task 1:
 ros2 launch kinematic_model kinematic_model.launch.py
 ```
 
-Task 2 with the verified local and cloud controller odometry (no argument needed):
+Task 2 with filtered odometry (no argument needed):
 
 ```bash
 ros2 launch eight_trajectory eight_trajectory.launch.py
@@ -119,10 +119,10 @@ Useful inspection commands, in a separately sourced terminal:
 ros2 topic info /wheel_speed --verbose
 ros2 topic info /cmd_vel --verbose
 ros2 topic echo /wheel_speed
-ros2 topic echo /rosbot_xl_base_controller/odom
+ros2 topic echo /odometry/filtered
 ```
 
-Use the selected feedback topic if you override the default. Cloud trajectory logs match the eight planned targets; sustained final-stop evidence and formal course acceptance remain pending.
+Use the selected feedback topic if you override the default. The learner reported that the cloud trajectory was normal with filtered feedback. Raw controller odometry previously converged internally while the Gazebo robot followed an incorrect path; do not use that convergence alone as acceptance evidence. The underlying raw-odometry discrepancy remains undiagnosed.
 
 ## Local validation (2026-09-29 to 2026-09-30)
 
@@ -139,7 +139,7 @@ Use the selected feedback topic if you override the default. Cloud trajectory lo
 
 The full run started at yaw 0.02000 rad, so its planned final yaw was -3.12160 rad; measured final yaw was -3.07407 rad, within tolerance. Recorded waypoint position errors were below 0.02 m and heading errors below 0.05 rad.
 
-Coach-provided verification helpers and raw logs remain outside this repository in local training records. No self-contained automated test suite is shipped here. These results do not replace independent simulator ground truth or course cloud acceptance.
+Coach-provided verification helpers and raw logs remain outside this repository in local training records. No self-contained automated test suite is shipped here. The local full-run numbers above were measured using controller odometry, not independent model poses. The cloud filtered-feedback result is a learner observation, not a full dynamic ground-truth trace or formal grading result.
 
 ## License
 
