@@ -23,6 +23,21 @@ std::optional<Pose2D> make_segment_target(
   };
 }
 
+// Coach支持：C042只处理世界坐标位置误差，不处理朝向。
+struct PositionError { double ex; double ey; };
+std::optional<PositionError> compute_position_error(
+  const Pose2D & target, const Pose2D & current)
+{
+  // TODO CP16-C042：按ex、ey顺序返回目标相对当前位置的误差。
+  // 返回写法：return PositionError{表达式1, 表达式2};
+
+
+  return PositionError {
+    target.x - current.x,
+    target.y - current.y
+  };
+}
+
 class EightTrajectory : public rclcpp::Node
 {
 public:
