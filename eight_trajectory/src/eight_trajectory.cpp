@@ -272,6 +272,29 @@ private:
     publisher_->publish(msg);
   }
 
+  // Coach支持：课程给定增量，字段顺序为dphi、dx、dy。
+  const std::array<SegmentDelta, 8> segments{{
+    {0.0, 1.0, -1.0}, {0.0, 1.0, 1.0},
+    {0.0, 1.0, 1.0}, {-1.5708, 1.0, -1.0},
+    {-1.5708, -1.0, -1.0}, {0.0, -1.0, 1.0},
+    {0.0, -1.0, 1.0}, {0.0, -1.0, -1.0}
+  }};
+  std::size_t segment_index_{0};
+
+  // CP16-C058：前提为本段到达、target_有值、当前索引有效。
+  // 本片先独立验证，尚未接入update_motion。
+  void advance_segment()
+  {
+    // TODO CP16-C058：完成一次航段推进，只更新状态，不发布消息。
+    // 还有下一段时：推进索引，取对应增量，以原计划target_生成下一目标，
+    // 保持finished_为false；已是最后一段时：finished_=true，不改变索引/目标。
+    // segments[index]取得SegmentDelta；已有make_segment_target可复用。
+    segment_index_  < segments.size() - 1 ? finished_ = false : finished_ = true;
+    if (!finished_) {
+      target_ = make_segment_target(target_.value(), segments[++segment_index_]);
+    }
+  }
+
   bool finished_{false};
   std::optional<std::chrono::steady_clock::time_point> last_pose_at_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
