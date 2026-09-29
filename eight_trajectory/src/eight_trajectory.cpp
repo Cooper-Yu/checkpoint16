@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -36,6 +37,21 @@ std::optional<PositionError> compute_position_error(
     target.x - current.x,
     target.y - current.y
   };
+}
+
+// Coach支持：世界速度输出类型和教学参数；C043核心由学习者实现。
+struct WorldVelocity { double vx; double vy; };
+std::optional<WorldVelocity> compute_world_velocity(const PositionError & error)
+{
+  const double position_tolerance = 0.02;  // m
+  const double max_speed = 0.1;           // m/s
+  const double distance_gain = 0.5;       // 1/s
+  // TODO CP16-C043：由error计算世界速度，先处理位置容差，再按比例限速。
+  // error.ex / error.ey单位m；返回WorldVelocity{vx, vy}，单位m/s。
+  // 支持API：std::hypot(a,b)求sqrt(a*a+b*b)，std::min(a,b)取较小值。
+  const double rho = std::hypot(error.ex, error.ey);
+  const double v = std::min(distance_gain * rho, max_speed);
+  return rho <= position_tolerance ? WorldVelocity {0, 0} : WorldVelocity {v * error.ex / rho, v * error.ey / rho};
 }
 
 class EightTrajectory : public rclcpp::Node
