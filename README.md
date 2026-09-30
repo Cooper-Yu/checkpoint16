@@ -5,7 +5,7 @@ ROSBot XL mecanum-wheel exercises for Ubuntu 22.04, ROS 2 Humble, and Gazebo For
 ## Status
 
 - Official evaluation on 2026-09-30: **8.5/10** (Task 1: 4.5/5; Task 2: 4/5). The score has not been updated; cloud verification and official re-evaluation of these repairs are pending.
-- Task 1 settling intervals were added and checked locally; the learner also confirmed the cloud motion sequence and final visual stop.
+- Task 1 settling intervals were added and checked locally; the learner also confirmed the cloud motion sequence and final visual stop. Automatic launch shutdown was subsequently added and verified with actual ROS nodes and messages; this latest change still needs cloud confirmation.
 - Task 2 now coordinates translation and rotation, limits changes in linear velocity, and shuts down its launch after the final stop interval. A local full eight-waypoint run and independent Gazebo pose comparison passed the diagnostic checks below.
 - Launch uses `/odometry/filtered` by default. In the course cloud environment, raw controller odometry previously disagreed with the actual model pose; the underlying discrepancy remains undiagnosed.
 
@@ -38,7 +38,7 @@ vy = r/4     * (-w_FL + w_FR + w_RL - w_RR)
 omega = r/(4*k) * (-w_FL + w_FR - w_RL + w_RR)
 ```
 
-Task 1 checks stages every 100 ms, commanding each motion for approximately 3 seconds of wall time. Each motion is followed by zero wheel commands: a 0.5-second settling interval before the next motion, and a 1-second interval after the final counterclockwise motion before entering Stop. Translation magnitude is 0.1 m/s and rotation magnitude is 0.5 rad/s. It continuously publishes zero in Stop.
+Task 1 checks stages every 100 ms, commanding each motion for approximately 3 seconds of wall time. Each motion is followed by zero wheel commands: a 0.5-second settling interval before the next motion, and a 1-second interval after the final counterclockwise motion before entering Stop. Translation magnitude is 0.1 m/s and rotation magnitude is 0.5 rad/s. After this final settling interval, the next Stop callback publishes zero and exits the wheel publisher. Its launch then shuts down the converter. The wait is not restarted on entry to Stop.
 
 Task 2 initializes its first goal from the first valid pose. Subsequent goals accumulate the configured world-frame increments from the previous planned goal, rather than from the actual stopping position. Translation and rotation can occur simultaneously.
 
@@ -137,6 +137,7 @@ Environment: Ubuntu 22.04, ROS 2 Humble, Gazebo Fortress, a single ROSBot XL in 
 
 | Check | Observed result |
 | --- | --- |
+| Task 1 automatic completion | Six ordered motions with zero-command intervals; final zero-command span about 1.20 s; both processes finished cleanly and command publishers disappeared (about 22.6 s including launch startup) |
 | Build and helper checks | Coordinate conversion, wheel calculations, coordinated control, smoothing, and bounded ideal-loop checks passed |
 | Feedback recovery | Stale feedback produces zero commands; restored feedback restarts the smoothed command at 0.02 m/s |
 | Final completion with controlled ROS input | No early exit before the last position and heading; 11 final zero-wheel messages over approximately 1 s; zero commands delivered through the converter |

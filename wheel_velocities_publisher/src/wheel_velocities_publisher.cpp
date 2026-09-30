@@ -105,7 +105,11 @@ private:
   void update_motion(double elapsed_seconds)
   {
     if (mode_ == MotionMode::Stop) {
+      // The final one-second zero-command interval has already completed.
       publish_stop();
+      RCLCPP_INFO(get_logger(), "Motion sequence complete; final stop wait finished.");
+      timer_->cancel();
+      rclcpp::shutdown();
       return;
     }
 
