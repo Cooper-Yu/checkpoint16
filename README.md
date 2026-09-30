@@ -4,6 +4,8 @@ ROSBot XL mecanum-wheel exercises for Ubuntu 22.04, ROS 2 Humble, and Gazebo For
 
 ## Status
 
+- Official evaluation on 2026-09-30: 8.5/10 (Task 1: 4.5/5; Task 2: 4/5). Repairs are in progress. Task 1 settling intervals passed a local timing and Gazebo-pose check; cloud re-evaluation is pending. Task 2 waypoint-4 accuracy, translation/rotation coordination, and automatic completion shutdown remain to be addressed.
+
 - Task 1: timed wheel commands, forward kinematics, and two-node launch implemented and locally verified.
 - Task 2: odometry feedback, eight-segment trajectory, waypoint transitions, timeout stopping, and two-node launch implemented and locally verified. A reduced-help coordinate-transform reconstruction also passed.
 - The learner confirmed normal cloud trajectory behavior after switching to `/odometry/filtered`. At rest, filtered odometry matched the Gazebo model pose within 2.3 mm with matching yaw; raw controller odometry differed substantially. Full dynamic ground-truth measurements and formal grading remain pending.
@@ -37,7 +39,7 @@ vy = r/4     * (-w_FL + w_FR + w_RL - w_RR)
 omega = r/(4*k) * (-w_FL + w_FR - w_RL + w_RR)
 ```
 
-Task 1 checks stages every 100 ms, commanding each motion for approximately 3 seconds. Translation magnitude is 0.1 m/s and rotation magnitude is 0.5 rad/s. It continuously publishes zero after the final stage.
+Task 1 checks stages every 100 ms, commanding each motion for approximately 3 seconds of wall time. Each motion is followed by zero wheel commands: a 0.5-second settling interval before the next motion, and a 1-second interval after the final counterclockwise motion before entering Stop. Translation magnitude is 0.1 m/s and rotation magnitude is 0.5 rad/s. It continuously publishes zero in Stop.
 
 Task 2 initializes its first goal from the first valid pose. Subsequent goals accumulate the configured world-frame increments from the previous planned goal, rather than from the actual stopping position. Translation and rotation can occur simultaneously.
 

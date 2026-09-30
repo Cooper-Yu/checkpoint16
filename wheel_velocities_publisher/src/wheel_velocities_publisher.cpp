@@ -101,11 +101,27 @@ private:
 
   }
 
-  // Advance timed stages without blocking; keep publishing zero after the last stage.
+  // Allow the robot to settle with zero commands between timed motions.
   void update_motion(double elapsed_seconds)
   {
-
     if (mode_ == MotionMode::Stop) {
+      publish_stop();
+      return;
+    }
+
+    if (waiting_after_motion_) {
+      const double wait_seconds = mode_ == MotionMode::Counterclockwise ? 1.0 : 0.5;
+      if (elapsed_seconds < wait_seconds) {
+        publish_stop();
+        return;
+      }
+
+      // Advance the mode, leave the waiting phase,
+      // reset the motion start time, log the new mode, and publish its wheel speeds.
+      mode_ = next_mode(mode_);
+      waiting_after_motion_ = false;
+      segment_started_at_ = std::chrono::steady_clock::now();
+      log_current_mode();
       publish_current_mode();
       return;
     }
@@ -115,11 +131,11 @@ private:
       return;
     }
 
-    mode_ = next_mode(mode_);
-    log_current_mode();
+    // Enter the waiting phase, reset its start time,
+    // and publish zero wheel speeds. Retain the current motion mode.
+    waiting_after_motion_ = true;
     segment_started_at_ = std::chrono::steady_clock::now();
-    publish_current_mode();
-    return;
+    publish_stop();
   }
 
   void publish_stop()
@@ -194,6 +210,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
   MotionMode mode_ = MotionMode::Forward;
+  bool waiting_after_motion_{false};
   std::chrono::steady_clock::time_point segment_started_at_;
 };
 
