@@ -4,11 +4,10 @@ ROSBot XL mecanum-wheel exercises for Ubuntu 22.04, ROS 2 Humble, and Gazebo For
 
 ## Status
 
-- Official evaluation on 2026-09-30: 8.5/10 (Task 1: 4.5/5; Task 2: 4/5). Repairs are in progress. Task 1 settling intervals passed a local timing and Gazebo-pose check; cloud re-evaluation is pending. Task 2 waypoint-4 accuracy, translation/rotation coordination, and automatic completion shutdown remain to be addressed.
-
-- Task 1: timed wheel commands, forward kinematics, and two-node launch implemented and locally verified.
-- Task 2: odometry feedback, eight-segment trajectory, waypoint transitions, timeout stopping, and two-node launch implemented and locally verified. A reduced-help coordinate-transform reconstruction also passed.
-- The learner confirmed normal cloud trajectory behavior after switching to `/odometry/filtered`. At rest, filtered odometry matched the Gazebo model pose within 2.3 mm with matching yaw; raw controller odometry differed substantially. Full dynamic ground-truth measurements and formal grading remain pending.
+- Official evaluation on 2026-09-30: **8.5/10** (Task 1: 4.5/5; Task 2: 4/5). The score has not been updated; cloud verification and official re-evaluation of these repairs are pending.
+- Task 1 settling intervals were added and checked locally; the learner also confirmed the cloud motion sequence and final visual stop.
+- Task 2 now coordinates translation and rotation, limits changes in linear velocity, and shuts down its launch after the final stop interval. A local full eight-waypoint run and independent Gazebo pose comparison passed the diagnostic checks below.
+- Launch uses `/odometry/filtered` by default. In the course cloud environment, raw controller odometry previously disagreed with the actual model pose; the underlying discrepancy remains undiagnosed.
 
 ## Packages and interfaces
 
@@ -48,13 +47,19 @@ Task 2 initializes its first goal from the first valid pose. Subsequent goals ac
 | Control period | 100 ms |
 | Position tolerance | 0.02 m |
 | Heading tolerance | 0.05 rad |
-| Distance gain | 0.5 /s |
-| Maximum linear speed | 0.1 m/s |
-| Heading gain | 1.0 /s |
+| Distance gain | 0.8 /s |
+| Maximum linear speed | 0.4 m/s |
+| Heading gain after position arrival | 1.0 /s |
 | Maximum angular speed | 0.5 rad/s |
 | Feedback timeout | 0.5 s, steady wall time |
+| Linear velocity vector change | At most 0.02 m/s per control callback |
+| Final zero-command interval | At least 1 s, steady wall time |
 
-Linear speed is proportional to distance, capped at the maximum and zero inside tolerance. The desired world velocity is rotated into the body frame using the current yaw. Heading control uses the shortest wrapped error and symmetric angular speed limits. A waypoint completes only when both tolerances are satisfied. The controller sends zero during the transition cycle and continuously after all eight segments complete.
+Desired linear speed is proportional to distance, capped at 0.4 m/s. Outside position tolerance, each callback limits the length of the world velocity change vector to 0.02 m/s. This is a per-callback command limit, not a fixed simulation-time acceleration bound when the real-time factor changes. The limited velocity is rotated into the body frame.
+
+Outside position tolerance, angular velocity is `heading_error * speed / distance`, capped symmetrically at 0.5 rad/s. It uses the limited linear speed and shortest wrapped heading error. Inside position tolerance, translation stops and proportional heading correction finishes any remaining turn. Angular velocity is zero inside heading tolerance. A waypoint completes only when both tolerances are satisfied.
+
+The controller sends zero during waypoint transitions and resets its velocity-change state on every stop. After the eighth waypoint, it continues publishing zero for at least one second, then exits. The launch listens for the trajectory process exit and shuts down the remaining converter node. The external simulator is unaffected. An unexpected trajectory process exit also triggers launch cleanup; cleanup alone is not evidence of successful completion.
 
 Missing or stale feedback causes repeated zero wheel commands. Fresh feedback resumes an unfinished trajectory. Feedback freshness measures local receipt time, not the message timestamp. Numeric pose/quaternion validation is performed; this is not a full estimator-quality check. The final heading changes by approximately -pi relative to the start; returning near the starting position does not mean returning to the starting orientation.
 
@@ -113,7 +118,7 @@ For an existing checkout, inspect local changes before updating; do not overwrit
 1. Start the course simulation with mecanum wheels and check its actual odometry topic and `/cmd_vel` interface.
 2. Stop any other wheel or velocity command publisher.
 3. Start the Task 2 launch, overriding `odom_topic` only if required.
-4. Observe all eight waypoints, the two rotation segments, and sustained stopping at the end. Confirm each position and heading against the course requirements.
+4. Observe all eight waypoints, the two rotation segments, and the final stop followed by automatic launch exit. Confirm each position and heading against the course requirements.
 
 Useful inspection commands, in a separately sourced terminal:
 
@@ -126,22 +131,27 @@ ros2 topic echo /odometry/filtered
 
 Use the selected feedback topic if you override the default. The learner reported that the cloud trajectory was normal with filtered feedback. Raw controller odometry previously converged internally while the Gazebo robot followed an incorrect path; do not use that convergence alone as acceptance evidence. The underlying raw-odometry discrepancy remains undiagnosed.
 
-## Local validation (2026-09-29 to 2026-09-30)
+## Local validation (2026-09-30)
 
-| Check | Result |
+Environment: Ubuntu 22.04, ROS 2 Humble, Gazebo Fortress, a single ROSBot XL in an empty world, filtered odometry feedback. These are local diagnostic results, not an official grading result or a guarantee for the cloud simulator.
+
+| Check | Observed result |
 | --- | --- |
-| Task 1 model inputs and timed sequence | Six directions, mixed inputs, zero command, and stage transitions passed |
-| Task 1 Gazebo controller odometry | Approximately ±0.1 m/s translation, ±0.5 rad/s rotation, then stop |
-| Task 2 helper and transition tests | Coordinate transforms, tolerances, planned goal accumulation, eight transitions, final boundary, and invalid-result branches passed |
-| Task 2 controlled ROS input | Missing/stale feedback stopping, recovery, and final completion behavior passed |
-| Full eight-segment Gazebo run | Eight waypoints entered both tolerances in order; final stable stop after about 136.4 s |
-| Full-run final errors | Position 0.01850 m; shortest heading error 0.04753 rad |
-| Task 2 launch | Two intended nodes, one publisher per command topic, odometry remapping, expected Twist output, and timeout stop passed |
-| Reduced-help learner reconstruction | Six known-vector and four norm/round-trip coordinate-transform checks passed |
+| Build and helper checks | Coordinate conversion, wheel calculations, coordinated control, smoothing, and bounded ideal-loop checks passed |
+| Feedback recovery | Stale feedback produces zero commands; restored feedback restarts the smoothed command at 0.02 m/s |
+| Final completion with controlled ROS input | No early exit before the last position and heading; 11 final zero-wheel messages over approximately 1 s; zero commands delivered through the converter |
+| Launch cleanup | Trajectory and converter finished cleanly; both command publishers disappeared |
+| Full eight-waypoint Gazebo run | All eight filtered poses entered the 0.02 m / 0.05 rad tolerances in order; waypoint 8 reached at about 52.1 s wall time |
+| Autonomous launch exit | About 53.4 s after launch; no harness stop command was needed for successful completion |
+| Independent Gazebo position error at each arrival | Approximately 2.23, 1.91, 1.87, 2.44, 1.85, 1.11, 1.12, 1.57 cm |
+| Independent endpoint after exit | Approximately 1.51 cm position error and 0.04368 rad (2.50 degrees) heading error |
+| Rotation during w3 to w4 | Actual midpoint yaw approximately -0.870 rad, confirming rotation during translation |
 
-The full run started at yaw 0.02000 rad, so its planned final yaw was -3.12160 rad; measured final yaw was -3.07407 rad, within tolerance. Recorded waypoint position errors were below 0.02 m and heading errors below 0.05 rad.
+Ground truth was aligned using the initial translation offset after checking that the initial yaw difference was below 0.001 rad. Arrival sample time differences were 3–7 ms. The diagnostics used a 4 cm actual-position bound, which is not a course-specified tolerance. Actual position errors can exceed the controller's 2 cm feedback tolerance.
 
-Coach-provided verification helpers and raw logs remain outside this repository in local training records. No self-contained automated test suite is shipped here. The local full-run numbers above were measured using controller odometry, not independent model poses. The cloud filtered-feedback result is a learner observation, not a full dynamic ground-truth trace or formal grading result.
+With the same local setup, raising the distance gain from 0.5 to 0.8 while keeping the 0.4 m/s speed cap and smoothing reduced a four-waypoint trial from 38.3 s to 26.3 s; waypoint-4 actual error remained around 2.3–2.4 cm. This is a single-run comparison, not a statistical performance claim. The final complete run verified the remaining waypoints and automatic exit separately.
+
+Earlier Task 1 six-direction, wheel-topic, and learner coordinate-transform checks remain recorded in the training notes. Coach-provided verification helpers and raw logs remain outside this repository; no self-contained automated test suite is shipped here. Cloud testing of this revision and official re-evaluation remain pending.
 
 ## License
 

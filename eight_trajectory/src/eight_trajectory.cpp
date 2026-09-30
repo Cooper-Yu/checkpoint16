@@ -38,11 +38,32 @@ struct WorldVelocity { double vx; double vy; };
 std::optional<WorldVelocity> compute_world_velocity(const PositionError & error)
 {
   const double position_tolerance = 0.02;  // m
-  const double max_speed = 0.1;           // m/s
-  const double distance_gain = 0.5;       // 1/s
+  const double max_speed = 0.4;           // m/s
+  const double distance_gain = 0.8;       // 1/s
   const double rho = std::hypot(error.ex, error.ey);
   const double v = std::min(distance_gain * rho, max_speed);
   return rho <= position_tolerance ? WorldVelocity {0, 0} : WorldVelocity {v * error.ex / rho, v * error.ey / rho};
+}
+
+// Limit the vector change in world-frame linear velocity.
+std::optional<WorldVelocity> limit_world_velocity_change(
+  const WorldVelocity & previous, const WorldVelocity & desired, double max_delta)
+{
+  if (!std::isfinite(previous.vx) || !std::isfinite(previous.vy) ||
+      !std::isfinite(desired.vx) || !std::isfinite(desired.vy) ||
+      !std::isfinite(max_delta) || max_delta < 0.0) {
+    return std::nullopt;
+  }
+  const double dx = desired.vx - previous.vx;
+  const double dy = desired.vy - previous.vy;
+  const double change = std::hypot(dx, dy);
+  if (!std::isfinite(change)) {
+    return std::nullopt;
+  }
+  if (change <= max_delta) {
+    return desired;
+  }
+  return WorldVelocity {previous.vx + max_delta * dx / change, previous.vy + max_delta * dy / change};
 }
 
 struct BodyLinearVelocity { double vx; double vy; };
@@ -71,6 +92,27 @@ std::optional<double> compute_angular_velocity(double heading_error)
   return std::abs(heading_error) <= heading_tolerance ? 0 : std::clamp(angular_speed, -max_angular_speed, max_angular_speed);
 }
 
+// Coordinate the remaining turn with the remaining translation time.
+std::optional<double> compute_coordinated_angular_velocity(
+  double rho, double speed, double heading_error)
+{
+  const double position_tolerance = 0.02;  // m
+
+  // Once position is reached, finish any remaining heading correction.
+  if (rho <= position_tolerance) {
+    return compute_angular_velocity(heading_error);
+  }
+
+  const double heading_tolerance = 0.05;  // rad
+  const double max_angular_speed = 0.5;   // rad/s
+  if (std::abs(heading_error) <= heading_tolerance) {
+    return 0.0;
+  }
+
+  // Match the remaining turn to the translation time, then limit angular speed.
+  return std::clamp(heading_error * speed / rho, -max_angular_speed, max_angular_speed);
+}
+
 // Wheel order: front left, front right, rear left, rear right; rad/s.
 using WheelSpeeds = std::array<double, 4>;
 std::optional<WheelSpeeds> body_to_wheels(
@@ -89,7 +131,8 @@ std::optional<WheelSpeeds> body_to_wheels(
 }
 
 std::optional<WheelSpeeds> compute_wheel_command(
-  const Pose2D & target, const Pose2D & current)
+  const Pose2D & target, const Pose2D & current,
+  WorldVelocity & previous_world_velocity, double max_delta)
 {
   if (!std::isfinite(target.x) || !std::isfinite(target.y) ||
       !std::isfinite(target.yaw) || !std::isfinite(current.x) ||
@@ -105,7 +148,14 @@ std::optional<WheelSpeeds> compute_wheel_command(
   if (!world_velocity) {
     return std::nullopt;
   }
-  const auto world_velocity_vxy = world_velocity.value();
+  const double rho = std::hypot(position_error.ex, position_error.ey);
+  // Position reached: retain the existing immediate translation stop.
+  const auto limited_world_velocity = rho <= 0.02 ? world_velocity :
+    limit_world_velocity_change(previous_world_velocity, world_velocity.value(), max_delta);
+  if (!limited_world_velocity) {
+    return std::nullopt;
+  }
+  const auto world_velocity_vxy = limited_world_velocity.value();
   const auto linear_velocity_result = world_to_body(world_velocity_vxy, current.yaw);
   if (!linear_velocity_result) {
     return std::nullopt;
@@ -116,13 +166,20 @@ std::optional<WheelSpeeds> compute_wheel_command(
     return std::nullopt;
   }
   const auto heading_error = heading_error_result.value();
-  const auto angular_velocity_result = compute_angular_velocity(heading_error);
+  const double speed = std::hypot(world_velocity_vxy.vx, world_velocity_vxy.vy);
+  const auto angular_velocity_result = compute_coordinated_angular_velocity(rho, speed, heading_error);
   if (!angular_velocity_result) {
     return std::nullopt;
   }
   const auto angular_velocity = angular_velocity_result.value();
 
-  return body_to_wheels(linear_velocity, angular_velocity);
+  const auto wheels_result = body_to_wheels(linear_velocity, angular_velocity);
+  if (!wheels_result) {
+    return std::nullopt;
+  }
+  previous_world_velocity = world_velocity_vxy;
+
+  return wheels_result;
 }
 
 std::optional<bool> segment_reached(const Pose2D & target, const Pose2D & current)
@@ -150,7 +207,20 @@ public:
     publisher_ = create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_speed", 10);
     // Stop on missing/stale feedback or completion; timeout uses steady wall time.
     timer_ = create_wall_timer(std::chrono::milliseconds(100), [this]() {
-      if (finished_ || !current_ || !target_ || !last_pose_at_ ||
+      if (finished_) {
+        publish_stop();
+        if (completion_started_at_) {
+          const double elapsed_seconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - completion_started_at_.value()).count();
+          if (elapsed_seconds >= 1) {
+            RCLCPP_INFO(get_logger(), "Trajectory complete; final stop wait finished.");
+            timer_->cancel();
+            rclcpp::shutdown();
+          }
+        }
+        return;
+      }
+      if (!current_ || !target_ || !last_pose_at_ ||
           std::chrono::steady_clock::now() - *last_pose_at_ > std::chrono::milliseconds(500)) {
         publish_stop();
         return;
@@ -202,7 +272,9 @@ private:
     }
 
     if (!finished_) {
-      const auto wheels_result = compute_wheel_command(target_.value(), current_.value());
+      // Command change limit: 0.02 m/s vector change per 100 ms wall-timer callback.
+      const auto wheels_result = compute_wheel_command(
+        target_.value(), current_.value(), previous_world_velocity_, 0.02);
       if (!wheels_result) {
         publish_stop();
         return;
@@ -229,6 +301,7 @@ private:
   }
   void publish_stop()
   {
+    previous_world_velocity_ = WorldVelocity{0.0, 0.0};
     std_msgs::msg::Float32MultiArray msg;
     msg.data = {0.0F, 0.0F, 0.0F, 0.0F};
     publisher_->publish(msg);
@@ -249,10 +322,15 @@ private:
     segment_index_  < segments.size() - 1 ? finished_ = false : finished_ = true;
     if (!finished_) {
       target_ = make_segment_target(target_.value(), segments[++segment_index_]);
+    } else if (!completion_started_at_) {
+      completion_started_at_ = std::chrono::steady_clock::now();
+
     }
   }
 
+  WorldVelocity previous_world_velocity_{0.0, 0.0};
   bool finished_{false};
+  std::optional<std::chrono::steady_clock::time_point> completion_started_at_;
   std::optional<std::chrono::steady_clock::time_point> last_pose_at_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
